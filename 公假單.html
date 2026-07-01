@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>觀音高中公假單產生器 | 終極修正版</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* --- 共用字體與基礎設定 --- */
+        @font-face { font-family: 'BiauKai'; src: local('標楷體'), local('DFKai-SB'), local('BiauKai'); }
+        body { font-family: 'BiauKai', 'Noto Sans TC', sans-serif; background-color: #f3f4f6; margin: 0; padding: 0; }
+        * { box-sizing: border-box; -webkit-print-color-adjust: exact; }
+        .input-underline { border-bottom: 1pt solid black; display: inline-block; padding: 0 4px; text-align: left; }
+
+        /* --- 列印媒體查詢 --- */
+        @media print {
+            .no-print { display: none !important; }
+            html, body, #app-container, #preview-panel { height: auto !important; overflow: visible !important; background: white !important; }
+            #preview-panel { padding: 0 !important; display: block !important; }
+            
+            /* V1 列印設定 */
+            .v1-page-container {
+                box-shadow: none !important; margin: 0 !important; border: none !important;
+                width: 210mm !important; height: 297mm !important; padding: 0.4cm 1.1cm !important;
+                page-break-after: always;
+            }
+            /* V2 列印設定 */
+            .v2-page-a4 {
+                box-shadow: none !important; margin: 0 !important; padding: 1.27cm 1.25cm !important;
+                page-break-after: always !important; page-break-inside: avoid !important;
+            }
+            @page { size: A4; margin: 0; }
+        }
+
+        /* =========================================
+           V1 樣式 (單頁雙聯模式)
+        ========================================= */
+        .v1-page-container {
+            width: 210mm; height: 297mm; padding: 0.4cm 1.1cm; background: white;
+            margin: 20px auto; display: flex; flex-direction: column; justify-content: space-between;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+        }
+        .v1-copy-container { width: 18.8cm; margin: 0 auto; height: 14cm; }
+        .v1-master-table { width: 100%; border-collapse: collapse; border: 1.5pt solid black; table-layout: fixed; }
+        .v1-master-table td { border: 1pt solid black; padding: 0; vertical-align: middle; text-align: center; }
+        .v1-row-h-title { height: 1.6cm; font-size: 15.5pt; font-weight: bold; }
+        .v1-left-info-cell { height: 2.1cm; font-size: 14pt; padding: 3px 12px !important; line-height: 1.4; text-align: left !important; }
+        
+        /* V1 資訊列排版 */
+        .v1-info-row { display: flex; align-items: center; margin-bottom: 2px; }
+        .v1-label { width: 3.2cm; text-align: right; font-weight: bold; margin-right: 4px; flex-shrink: 0; } 
+        .v1-value { flex: 1; border-bottom: 1pt solid black; text-align: left; padding-left: 5px; min-height: 24px; }
+        
+        .v1-row-h-header { height: 1.1cm; font-size: 17pt; }
+        .v1-row-h-notice { height: 0.6cm; font-size: 8.5pt; font-weight: bold; text-align: center !important; }
+        .v1-row-h-notice td { white-space: nowrap; overflow: visible; padding: 0 2px !important; letter-spacing: -0.5px; }
+
+        .v1-row-h-student { height: 0.85cm; font-size: 16pt; }
+        .v1-title-sign { font-size: 19pt; display: block; }
+        .v1-notice-small { font-size: 9pt; font-weight: normal; line-height: 1.1; display: block; margin-top: 1px; }
+        .v1-cut-line { border-top: 1px dashed #000; width: 100%; margin: 8px 0; position: relative; }
+        
+        /* 簽核表格樣式 */
+        .v1-audit-table { width: 100%; border-collapse: collapse; border: 1.5pt solid black; border-top: none; table-layout: fixed; }
+        .v1-audit-table td { border: 1pt solid black; text-align: center; vertical-align: middle; padding: 0; font-weight: bold; }
+
+        /* =========================================
+           V2 樣式 (多頁清單模式)
+        ========================================= */
+        .v2-page-a4 {
+            width: 210mm; height: 297mm; padding: 1.27cm 1.25cm; background: white;
+            box-sizing: border-box; margin: 20px auto; box-shadow: 0 0 15px rgba(0,0,0,0.2);
+        }
+        .v2-master-table { width: 18.5cm; border-collapse: collapse; table-layout: fixed; border: 1.2pt solid black; margin: 0 auto; }
+        .v2-master-table td { border: 1.0pt solid black; padding: 0; vertical-align: middle; text-align: center; box-sizing: border-box; overflow: hidden; }
+        .v2-w-idx { width: 1.1cm; } .v2-w-class { width: 2.2cm; } .v2-w-no { width: 1.5cm; } .v2-w-name { width: 2.8cm; } .v2-w-tutor { width: 4.5cm; } .v2-w-teacher { width: 6.4cm; }
+        .v2-row-h1 { height: 2.0cm; } .v2-row-h2 { height: 2.5cm; } .v2-row-header-top { height: 1.2cm; }
+        .v2-row-header-note { height: 0.5cm; font-size: 7.5pt; text-align: left !important; line-height: 1.2; padding: 2px 8px !important; font-weight: normal; }
+        .v2-row-student { height: 0.9cm; font-size: 16pt; }
+        .v2-row-audit-title { height: 0.9cm; font-size: 18pt; font-weight: bold; letter-spacing: 2em; background-color: #f9fafb; }
+        .v2-check-box { font-family: Arial, sans-serif; font-size: 14pt; margin-right: 4px; }
+        .v2-info-label { font-size: 14pt; font-weight: bold; white-space: nowrap; }
+        .v2-info-content { font-size: 14pt; }
+        .v2-header-teacher-note { font-size: 7pt; font-weight: normal; line-height: 1.1; text-align: left; padding: 2px 4px; border-top: 0.5pt solid black; margin-top: 2px; }
+        .v2-footer-container { width: 18.5cm; margin: 5px auto 0; text-align: left; line-height: 1.2; }
+        .v2-footer-14pt { font-size: 14pt; font-weight: bold; margin-bottom: 2px; }
+        .v2-footer-12pt { font-size: 12pt; margin-top: 0; }
+        .v2-gray-highlight { background-color: #e5e7eb; display: inline-block; padding: 0 2px; }
+
+        /* UI 輔助 */
+        .mode-switch-label { @apply block text-sm font-bold text-gray-700 p-2 rounded border cursor-pointer text-center transition-all; }
+        .mode-switch-input:checked + .mode-switch-label { @apply bg-indigo-600 text-white border-indigo-600; }
+    </style>
+</head>
+<body class="h-screen overflow-hidden flex flex-col">
+
+    <header class="bg-slate-900 text-white shadow-md z-20 no-print flex-none">
+        <div class="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <i class="fas fa-file-invoice text-indigo-400 text-xl"></i>
+                <h1 class="text-lg font-bold">觀音高中公假單產生器 <span class="text-xs font-normal opacity-75">| 終極修正版</span></h1>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button onclick="clearStorage()" class="text-xs bg-red-600 hover:bg-red-500 px-3 py-1.5 rounded font-bold transition-colors">
+                    <i class="fas fa-trash-alt mr-1"></i>清除紀錄
+                </button>
+                <button onclick="exportToExcel()" class="bg-green-600 hover:bg-green-500 px-4 py-1.5 rounded font-bold shadow-lg transition-colors text-xs text-white">
+                    <i class="fas fa-file-excel mr-1"></i>匯出 Excel
+                </button>
+                <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-500 px-6 py-1.5 rounded font-bold shadow-lg transition-colors text-white">
+                    <i class="fas fa-print mr-2"></i>列印
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div id="app-container" class="flex flex-1 overflow-hidden">
+        <aside class="w-80 bg-white border-r border-gray-300 overflow-y-auto no-print p-4 space-y-4 shadow-inner">
+            <div class="bg-indigo-50 p-3 rounded-xl border-2 border-indigo-200">
+                <div class="text-xs font-bold text-indigo-700 uppercase tracking-wider mb-2 text-center">版面模式切換</div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <input type="radio" id="mode-v1" name="layout-mode" value="v1" class="hidden mode-switch-input" onchange="handleInput()">
+                        <label for="mode-v1" class="mode-switch-label">
+                            <i class="fas fa-columns mb-1 block text-lg"></i>5人版
+                        </label>
+                    </div>
+                    <div>
+                        <input type="radio" id="mode-v2" name="layout-mode" value="v2" class="hidden mode-switch-input" onchange="handleInput()">
+                        <label for="mode-v2" class="mode-switch-label">
+                            <i class="fas fa-scroll mb-1 block text-lg"></i>多人版
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+                <div class="flex flex-col"><span class="text-[10px] font-bold text-gray-500 mb-1 ml-1">學年度</span><input type="text" id="input-year" class="border rounded p-2 text-sm font-mono" oninput="handleInput()"></div>
+                <div class="flex flex-col"><span class="text-[10px] font-bold text-gray-500 mb-1 ml-1">學期</span><input type="text" id="input-semester" class="border rounded p-2 text-sm font-mono" oninput="handleInput()"></div>
+            </div>
+
+            <div class="space-y-1">
+                <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">申請日期</div>
+                <div class="grid grid-cols-3 gap-1">
+                    <input type="text" id="input-app-year" class="border rounded p-2 text-sm text-center font-mono" placeholder="年" oninput="handleInput()">
+                    <input type="text" id="input-app-month" class="border rounded p-2 text-sm text-center font-mono" placeholder="月" oninput="handleInput()">
+                    <input type="text" id="input-app-day" class="border rounded p-2 text-sm text-center font-mono" placeholder="日" oninput="handleInput()">
+                </div>
+            </div>
+
+            <div class="space-y-1">
+                <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">公假事由</div>
+                <textarea id="input-reason" rows="2" class="w-full border rounded p-2 text-sm" oninput="handleInput()"></textarea>
+            </div>
+
+            <div class="space-y-1">
+                <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">公假地點</div>
+                <div class="flex space-x-4 mb-2 ml-1">
+                    <label class="text-sm flex items-center cursor-pointer"><input type="radio" name="loc-type" value="inner" onchange="handleInput()" class="mr-1"> 校內</label>
+                    <label class="text-sm flex items-center cursor-pointer"><input type="radio" name="loc-type" value="outer" onchange="handleInput()" class="mr-1"> 校外</label>
+                </div>
+                <input type="text" id="input-location" class="w-full border rounded p-2 text-sm" placeholder="校外地點名稱" oninput="handleInput()">
+            </div>
+
+            <div class="space-y-2 bg-amber-50 p-3 rounded-lg border border-amber-200">
+                <div class="text-xs font-bold text-amber-700 uppercase tracking-wider">公假日期 (直接填寫區)</div>
+                <input type="text" id="input-date-custom" class="w-full border rounded p-2 text-sm" placeholder="例：114/03/12 至 114/03/14" oninput="handleInput()">
+                <p class="text-[10px] text-amber-600 mt-1 leading-tight">※ 若此欄有值，將優先使用此內容。</p>
+            </div>
+
+            <div class="space-y-2 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                <div class="text-xs font-bold text-blue-600 uppercase tracking-wider">公假日期與節次 (選填)</div>
+                <div class="grid grid-cols-3 gap-1 mb-2">
+                    <span class="col-span-3 text-[10px] text-blue-500 font-bold">開始：</span>
+                    <input type="text" id="start-m" class="border rounded p-1.5 text-sm text-center font-mono" placeholder="月" oninput="handleInput()">
+                    <input type="text" id="start-d" class="border rounded p-1.5 text-sm text-center font-mono" placeholder="日" oninput="handleInput()">
+                    <input type="text" id="start-p" class="border rounded p-1.5 text-sm text-center font-mono" placeholder="節次" oninput="handleInput()">
+                </div>
+                <div class="grid grid-cols-3 gap-1">
+                    <span class="col-span-3 text-[10px] text-blue-500 font-bold">結束：</span>
+                    <input type="text" id="end-m" class="border rounded p-1.5 text-sm text-center font-mono" placeholder="月" oninput="handleInput()">
+                    <input type="text" id="end-d" class="border rounded p-1.5 text-sm text-center font-mono" placeholder="日" oninput="handleInput()">
+                    <input type="text" id="end-p" class="border rounded p-1.5 text-sm text-center font-mono" placeholder="節次" oninput="handleInput()">
+                </div>
+            </div>
+
+            <div class="space-y-1">
+                <div class="flex justify-between items-end">
+                     <div class="text-xs font-bold text-slate-400 uppercase tracking-wider">學生名單 (班級 座號 姓名)</div>
+                     <div class="text-[10px] text-gray-400">一行一位</div>
+                </div>
+                <textarea id="input-batch" rows="8" class="w-full border rounded p-2 text-sm font-mono" placeholder="高一1 01 王小明" oninput="handleBatchPaste()"></textarea>
+            </div>
+
+            <div class="flex items-center p-2 bg-gray-100 rounded">
+                <input type="checkbox" id="show-email-check" class="mr-2 h-4 w-4 cursor-pointer" onchange="handleInput()">
+                <label for="show-email-check" class="text-xs font-bold text-slate-600 cursor-pointer select-none">顯示 Email 通知欄位</label>
+            </div>
+        </aside>
+
+        <main id="preview-panel" class="flex-1 bg-gray-500 overflow-auto p-8 flex flex-col items-center"></main>
+    </div>
+
+    <script>
+        // 全域狀態
+        const state = {
+            layoutMode: 'v1', 
+            year: '114', semester: '2', appDate: { y: '', m: '', d: '' },
+            reason: '', locationName: '', locationType: 'outer',
+            dateCustom: '',
+            dateStart: { m: '', d: '', p: '' }, dateEnd: { m: '', d: '', p: '' },
+            showEmail: false,
+            batchRaw: '',
+            studentsFlat: [], 
+            studentsByClass: {}
+        };
+
+        // --- 資料處理與存取 ---
+        function loadFromStorage() {
+            const saved = localStorage.getItem('guanyin_leave_unified_v1');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    Object.assign(state, parsed);
+                } catch (e) {
+                    console.error("讀取儲存資料失敗", e);
+                }
+            } else {
+                const today = new Date();
+                state.appDate.y = today.getFullYear() - 1911;
+                state.appDate.m = today.getMonth() + 1;
+                state.appDate.d = today.getDate();
+                state.layoutMode = 'v1'; 
+            }
+            
+            const modeInput = document.querySelector(`input[name="layout-mode"][value="${state.layoutMode}"]`);
+            if(modeInput) modeInput.checked = true;
+
+            const locInput = document.querySelector(`input[name="loc-type"][value="${state.locationType}"]`);
+            if(locInput) locInput.checked = true;
+
+            document.getElementById('input-year').value = state.year;
+            document.getElementById('input-semester').value = state.semester;
+            document.getElementById('input-app-year').value = state.appDate.y;
+            document.getElementById('input-app-month').value = state.appDate.m;
+            document.getElementById('input-app-day').value = state.appDate.d;
+            document.getElementById('input-reason').value = state.reason;
+            document.getElementById('input-location').value = state.locationName;
+            document.getElementById('input-date-custom').value = state.dateCustom;
+            document.getElementById('start-m').value = state.dateStart.m;
+            document.getElementById('start-d').value = state.dateStart.d;
+            document.getElementById('start-p').value = state.dateStart.p;
+            document.getElementById('end-m').value = state.dateEnd.m;
+            document.getElementById('end-d').value = state.dateEnd.d;
+            document.getElementById('end-p').value = state.dateEnd.p;
+            document.getElementById('input-batch').value = state.batchRaw;
+            document.getElementById('show-email-check').checked = state.showEmail;
+
+            parseStudents(state.batchRaw);
+            renderMain();
+        }
+
+        function handleInput() {
+            const modeEl = document.querySelector('input[name="layout-mode"]:checked');
+            if(modeEl) state.layoutMode = modeEl.value;
+            
+            state.year = document.getElementById('input-year').value;
+            state.semester = document.getElementById('input-semester').value;
+            state.appDate = { y: document.getElementById('input-app-year').value, m: document.getElementById('input-app-month').value, d: document.getElementById('input-app-day').value };
+            state.reason = document.getElementById('input-reason').value;
+            state.locationName = document.getElementById('input-location').value;
+            
+            const locEl = document.querySelector('input[name="loc-type"]:checked');
+            if(locEl) state.locationType = locEl.value;
+
+            state.dateCustom = document.getElementById('input-date-custom').value;
+            state.dateStart = { m: document.getElementById('start-m').value, d: document.getElementById('start-d').value, p: document.getElementById('start-p').value };
+            state.dateEnd = { m: document.getElementById('end-m').value, d: document.getElementById('end-d').value, p: document.getElementById('end-p').value };
+            state.showEmail = document.getElementById('show-email-check').checked;
+
+            localStorage.setItem('guanyin_leave_unified_v1', JSON.stringify(state));
+            renderMain();
+        }
+
+        function handleBatchPaste() {
+            const text = document.getElementById('input-batch').value;
+            state.batchRaw = text;
+            parseStudents(text);
+            handleInput(); 
+        }
+
+        function parseStudents(text) {
+            state.studentsFlat = [];
+            state.studentsByClass = {};
+            if (!text || !text.trim()) return;
+
+            text.trim().split('\n').forEach(line => {
+                const parts = line.split(/[\t\s]+/).filter(p => p.trim());
+                if (parts.length >= 3) {
+                    const s = { cls: parts[0], no: parts[1], name: parts[2] };
+                    state.studentsFlat.push(s);
+                    if (!state.studentsByClass[s.cls]) state.studentsByClass[s.cls] = [];
+                    state.studentsByClass[s.cls].push(s);
+                }
+            });
+        }
+
+        function clearStorage() {
+            if (confirm('確定要清除所有填寫資料嗎？')) {
+                localStorage.removeItem('guanyin_leave_unified_v1');
+                location.reload();
+            }
+        }
+
+        // --- Excel 匯出功能 ---
+        function exportToExcel() {
+            if (state.studentsFlat.length === 0) {
+                alert('沒有學生名單可以匯出！');
+                return;
+            }
+
+            // 1. 準備公假資訊
+            let dateDesc = state.dateCustom;
+            if (!dateDesc) {
+                const sd = state.dateStart, ed = state.dateEnd;
+                dateDesc = `${sd.m}月${sd.d}日 第${sd.p}節 至 ${ed.m}月${ed.d}日 第${ed.p}節`;
+            }
+            const appDateStr = `${state.appDate.y}/${state.appDate.m}/${state.appDate.d}`;
+            const locationStr = `${state.locationType === 'inner' ? '校內' : '校外'}：${state.locationName}`;
+
+            // 2. 建立資料陣列
+            const excelData = state.studentsFlat.map(s => ({
+                '申請日期': appDateStr,
+                '公假事由': state.reason,
+                '公假地點': locationStr,
+                '公假時間': dateDesc,
+                '班級': s.cls,
+                '座號': s.no,
+                '姓名': s.name
+            }));
+
+            // 3. 產生 Worksheet
+            const worksheet = XLSX.utils.json_to_sheet(excelData);
+            
+            // 4. 設定欄寬 (選填)
+            const wscols = [
+                {wch: 12}, // 申請日期
+                {wch: 30}, // 公假事由
+                {wch: 25}, // 公假地點
+                {wch: 35}, // 公假時間
+                {wch: 10}, // 班級
+                {wch: 8},  // 座號
+                {wch: 12}  // 姓名
+            ];
+            worksheet['!cols'] = wscols;
+
+            // 5. 建立 Workbook 並匯出
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "公假名單");
+            
+            // 檔名加上日期
+            const filename = `公假名單_${state.appDate.y}${state.appDate.m.padStart(2,'0')}${state.appDate.d.padStart(2,'0')}.xlsx`;
+            XLSX.writeFile(workbook, filename);
+        }
+
+        function renderMain() {
+            const panel = document.getElementById('preview-panel');
+            panel.innerHTML = ''; 
+            if (state.layoutMode === 'v1') {
+                renderV1_Dual(panel);
+            } else {
+                renderV2_Single(panel);
+            }
+        }
+
+        function renderV1_Dual(panel) {
+            const fullTitle = `桃園巿立觀音高級中等學校${state.year}學年度第${state.semester}學期學生因公請假報告單`;
+            const todayStr = `${state.appDate.y} 年 ${state.appDate.m} 月 ${state.appDate.d} 日`;
+            const isOut = state.locationType === 'outer';
+            
+            const locHTML = isOut
+                ? `□校內 ■校外：<span class="v1-value" style="display:inline-block; border-bottom:1pt solid black; width: 4cm;">${state.locationName}</span> (檢附公文證明)`
+                : `■校內 □校外：<span class="v1-value" style="display:inline-block; border-bottom:1pt solid black; width: 4cm;">${state.locationName}</span>`;
+
+            let dateDesc = state.dateCustom;
+            if (!dateDesc) {
+                const sd = state.dateStart, ed = state.dateEnd;
+                dateDesc = `${sd.m || ' '}月${sd.d || ' '}日 節次：${sd.p || ' '} 至 ${ed.m || ' '}月${ed.d || ' '}日 節次：${ed.p || ' '}`;
+            }
+
+            // V1 分班處理：定義生成單頁的函數
+            const createV1Page = (students) => {
+                const generateCopyHTML = (footerLabel) => {
+                    let studentRows = "";
+                    for (let i = 0; i < 5; i++) {
+                        const s = students[i] || { cls: '', no: '', name: '' };
+                        let emailCell = "";
+                        if (i === 0) {
+                            emailCell = `
+                            <td rowspan="6" style="vertical-align: top;"></td>
+                            <td rowspan="6" style="vertical-align: top; padding-top: 5px;">
+                                <div style="font-size: 16pt; ${state.showEmail ? '' : 'display:none;'}">Email 轉知</div>
+                            </td>`;
+                        }
+                        studentRows += `
+                        <tr class="v1-row-h-student">
+                            <td>${s.cls}</td><td>${s.no}</td><td>${s.name}</td>${emailCell}
+                        </tr>`;
+                    }
+
+                    return `
+                    <table class="v1-master-table">
+                        <colgroup><col style="width:2.3cm"><col style="width:2.0cm"><col style="width:3.8cm"><col style="width:4.8cm"><col style="width:5.9cm"></colgroup>
+                        <tr class="v1-row-h-title">
+                            <td colspan="5">
+                                <div style="font-size: 16pt;">${fullTitle}</div>
+                                <div style="text-align: right; font-size: 14pt; font-weight: normal; padding-right: 0.8cm;">${todayStr}</div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="5" class="v1-left-info-cell">
+                                <div class="v1-info-row"><span class="v1-label">公假事由：</span><div class="v1-value">${state.reason}</div></div>
+                                <div class="v1-info-row"><span class="v1-label">公假地點：</span><div style="flex:1; text-align:left;">${locHTML}</div></div>
+                                <div class="v1-info-row"><span class="v1-label">公假日期：</span><div class="v1-value">${dateDesc}</div></div>
+                            </td>
+                        </tr>
+                        <tr class="v1-row-h-header">
+                            <td>班級</td><td>座號</td><td>姓名</td>
+                            <td rowspan="2"><span class="v1-title-sign">會簽導師</span></td>
+                            <td rowspan="2">
+                                <span class="v1-title-sign">會簽任課老師</span>
+                                <span class="v1-notice-small">※公假時間為定期評量節次需加會<br>試務組(高中部)/註冊組(國中部)</span>
+                            </td>
+                        </tr>
+                        <tr class="v1-row-h-notice"><td colspan="3">※名單塗改更正需加蓋申請人章、未使用之空白欄位請劃記╳</td></tr>
+                        ${studentRows}
+                    </table>
+                    <table class="v1-audit-table">
+                        <colgroup><col style="width:33.3%"><col style="width:33.4%"><col style="width:33.3%"></colgroup>
+                        <tr style="height: 0.7cm; font-size:12pt;">
+                            <td style="border-bottom: 1pt solid black; vertical-align: bottom; padding-bottom: 2px;">申請人(組長職)</td>
+                            <td style="border-bottom: 1pt solid black; vertical-align: bottom; padding-bottom: 2px;">生輔組/生教組</td>
+                            <td style="border-bottom: 1pt solid black; vertical-align: bottom; padding-bottom: 2px;">學務主任</td>
+                        </tr>
+                        <tr style="height: 1.6cm;">
+                            <td></td><td></td><td></td>
+                        </tr>
+                    </table>
+                    <div class="flex justify-between mt-1" style="font-size: 10pt; padding: 0 5px;">
+                        <div>學務處幹事登錄：<span class="input-underline" style="min-width: 3cm;"></span></div>
+                        <div style="font-weight: bold;">${footerLabel}</div>
+                    </div>`;
+                };
+
+                const page = document.createElement('div');
+                page.className = 'v1-page-container';
+                page.innerHTML = `
+                    <div class="v1-copy-container">${generateCopyHTML('第一聯 學務處留存(幹事登錄後留存)')}</div>
+                    <div class="v1-cut-line"></div>
+                    <div class="v1-copy-container">${generateCopyHTML('第二聯 班級留存(國中部請將此聯浮貼於班級點名表)')}</div>
+                `;
+                return page;
+            };
+
+            // V1 分班與分頁邏輯
+            const classes = Object.keys(state.studentsByClass);
+            if (classes.length === 0) {
+                // 無資料時，產生一張空白單
+                panel.appendChild(createV1Page([]));
+            } else {
+                // 排序班級
+                classes.sort().forEach(c => {
+                    const allStudents = state.studentsByClass[c];
+                    const rowsPerPage = 5;
+                    const pageCount = Math.max(1, Math.ceil(allStudents.length / rowsPerPage));
+                    for (let i = 0; i < pageCount; i++) {
+                        const start = i * rowsPerPage;
+                        const pageStudents = allStudents.slice(start, start + rowsPerPage);
+                        panel.appendChild(createV1Page(pageStudents));
+                    }
+                });
+            }
+        }
+
+        function renderV2_Single(panel) {
+             const createPageHTML = (className, students, startIndex = 0) => {
+                const page = document.createElement('div');
+                page.className = 'v2-page-a4';
+                const isInner = state.locationType === 'inner';
+                const emailLabel = state.showEmail ? `<div style="font-size:16pt; margin-top: 20px; text-align:center; border-top: 1px dashed #ccc; padding-top:10px;">Email 通知</div>` : '';
+
+                let dateDisplayHTML = '';
+                if (state.dateCustom.trim() !== '') {
+                    dateDisplayHTML = `<span class="v2-info-content input-underline" style="flex:1; text-align:left;">${state.dateCustom}</span>`;
+                } else {
+                    dateDisplayHTML = `
+                        <span class="input-underline" style="width:40px">${state.dateStart.m}</span><span class="v2-info-content">月</span>
+                        <span class="input-underline" style="width:40px">${state.dateStart.d}</span><span class="v2-info-content">日 節次：</span>
+                        <span class="input-underline" style="width:80px">${state.dateStart.p}</span><span class="v2-info-content mx-2">至</span>
+                        <span class="input-underline" style="width:40px">${state.dateEnd.m}</span><span class="v2-info-content">月</span>
+                        <span class="input-underline" style="width:40px">${state.dateEnd.d}</span><span class="v2-info-content">日 節次：</span>
+                        <span class="input-underline" style="width:80px">${state.dateEnd.p}</span>`;
+                }
+
+                let studentRows = '';
+                const maxRows = 15;
+                for (let i = 0; i < maxRows; i++) {
+                    const s = students[i] || { no: '', name: '' };
+                    const displayClass = (s.no.trim() || s.name.trim()) ? className : '';
+                    const idx = (s.no.trim() || s.name.trim()) ? (startIndex + i + 1) : '';
+                    studentRows += `<tr class="v2-row-student"><td>${idx}</td><td>${displayClass}</td><td>${s.no}</td><td>${s.name}</td>`;
+                    if (i === 0) {
+                        studentRows += `<td rowspan="${maxRows}"></td><td rowspan="${maxRows}" style="vertical-align: top; padding: 10px 4px; text-align: left;">${emailLabel}</td>`;
+                    }
+                    studentRows += `</tr>`;
+                }
+
+                const v2ProofText = !isInner ? '(檢附公文證明)' : '';
+
+                page.innerHTML = `
+                    <table class="v2-master-table">
+                        <colgroup><col class="v2-w-idx"><col class="v2-w-class"><col class="v2-w-no"><col class="v2-w-name"><col class="v2-w-tutor"><col class="v2-w-teacher"></colgroup>
+                        <tr class="v2-row-h1"><td colspan="6" style="padding: 2px 5px;">
+                            <div style="font-size: 22pt; font-weight: bold; line-height: 1.2;">桃園市立觀音高級中等學校${state.year}學年度第${state.semester}學期<br>學生因公請假報告單</div>
+                            <div style="text-align: right; font-size: 15pt; padding-right: 0.5cm; margin-top: -2px;">${state.appDate.y} 年 ${state.appDate.m} 月 ${state.appDate.d} 日</div>
+                        </td></tr>
+                        <tr class="v2-row-h2"><td colspan="6" style="text-align: left; padding: 5px 12px; line-height: 1.8;">
+                            <div class="flex items-center"><span class="v2-info-label">公假事由：</span><span class="v2-info-content input-underline" style="flex:1; text-align:left;">${state.reason}</span></div>
+                            <div class="flex items-center">
+                                <span class="v2-info-label">公假地點：</span><span class="v2-check-box ml-2">${isInner ? '■' : '□'}</span><span class="v2-info-content">校內：</span>
+                                <span class="input-underline v2-info-content" style="min-width:120px; margin-right:15px">${isInner ? state.locationName : ''}</span>
+                                <span class="v2-check-box">${!isInner ? '■' : '□'}</span><span class="v2-info-content">校外：</span>
+                                <span class="input-underline v2-info-content" style="flex:1; text-align:left;">${!isInner ? state.locationName : ''}</span>
+                                <span class="v2-info-content ml-1">${v2ProofText}</span>
+                            </div>
+                            <div class="flex items-center"><span class="v2-info-label">公假日期：</span>${dateDisplayHTML}</div>
+                        </td></tr>
+                        <tr class="v2-row-header-top">
+                            <td style="font-size:14pt; font-weight:bold;">序號</td><td style="font-size:16pt; font-weight:bold;">班級</td><td style="font-size:16pt; font-weight:bold;">座號</td><td style="font-size:16pt; font-weight:bold;">姓名</td>
+                            <td rowspan="2" style="font-size:16pt; font-weight:bold;">會簽導師</td>
+                            <td rowspan="2" style="padding: 2px 0;">
+                                <div style="font-size:16pt; font-weight:bold;">會簽任課老師</div>
+                                <div class="v2-header-teacher-note">※定期評量需加會試務組(高)或註冊組(國)。<br>※社團時間校外社團老師可會簽訓育組(高)、活動組(國)。</div>
+                            </td>
+                        </tr>
+                        <tr class="v2-row-header-note"><td colspan="4" style="text-align: left; padding: 2px 8px;">(1)按班級座號依序填寫。(2)名單塗改更正需加蓋申請人章。(3)未使用之空白欄位請劃記「✕」。</td></tr>
+                        ${studentRows}
+                        <tr class="v2-row-audit-title"><td colspan="6">審 核</td></tr>
+                        <tr><td colspan="6" style="padding: 0; border: none;">
+                            <table style="width: 100%; border-collapse: collapse; table-layout: fixed; border: none;">
+                                <tr><td style="width: 33.33%; height: 0.7cm; border-right: 1.0pt solid black; border-bottom: 1.0pt solid black; font-size:12pt; font-weight:bold;">申請人(教職員)</td><td style="width: 33.33%; border-right: 1.0pt solid black; border-bottom: 1.0pt solid black; font-size:12pt; font-weight:bold;">生輔組/生教組</td><td style="width: 33.34%; border-bottom: 1.0pt solid black; font-size:12pt; font-weight:bold;">學務主任</td></tr>
+                                <tr><td style="height: 1.5cm; border-right: 1.0pt solid black;"></td><td style="height: 1.5cm; border-right: 1.0pt solid black;"></td><td style="height: 1.5cm;"></td></tr>
+                            </table>
+                        </td></tr>
+                    </table>
+                    <div class="v2-footer-container">
+                        <div class="v2-footer-14pt">⇅申請人於公假結束後確認日期時間、人員無誤後，再送幹事登錄。</div>
+                        <div class="v2-footer-12pt">學務處幹事登錄：<span class="v2-gray-highlight">※高中部公假人數達16人以上、有電子檔名單者，名單請寄幹事信箱。</span></div>
+                    </div>`;
+                return page;
+            };
+
+            const classes = Object.keys(state.studentsByClass);
+            if (classes.length === 0) {
+                panel.appendChild(createPageHTML('      ', []));
+            } else {
+                classes.sort().forEach(c => {
+                    const allStudents = state.studentsByClass[c];
+                    const rowsPerPage = 15;
+                    const pageCount = Math.max(1, Math.ceil(allStudents.length / rowsPerPage));
+                    for (let i = 0; i < pageCount; i++) {
+                        const start = i * rowsPerPage;
+                        const pageStudents = allStudents.slice(start, start + rowsPerPage);
+                        panel.appendChild(createPageHTML(c, pageStudents, start));
+                    }
+                });
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', loadFromStorage);
+    </script>
+</body>
+</html>
